@@ -5,6 +5,9 @@ import MonsterCard from './components/MonsterCard'
 function App() {
 
   const [socket, setSocket] = useState(null);
+  const [gamePhase, setGamePhase] = useState('connecting'); // 'connecting', 'choosing', 'fighting'
+  const [monsterChoices, setMonsterChoices] = useState([]);
+  const [gameMessage, setGameMessage] = useState('');
 
   const [playerMonster, setPlayerMonster] = useState({
     name: 'Goblin',
@@ -34,9 +37,47 @@ function App() {
 
     newSocket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      console.log("Message: " + message)
-      console.log(event.data)
-    }
+      console.log('Message from server: ', message);
+
+      // Un switch es bueno para manejar diferentes tipos de mensajes
+      switch (message.type) {
+        case 'GAME_STATE_UPDATE':
+          // El servidor nos da el estado completo y personalizado
+          setPlayerMonster(message.yourMonster);
+          setOpponentMonster(message.opponentMonster);
+          setPlayerTurn(message.isYourTurn);
+          setGamePhase('fighting');
+
+          // Manejar el fin del juego
+          if (message.isGameOver) {
+            alert(`Game Over! Winner: ${message.winner}`);
+          }
+          break;
+
+        case 'WAITING_FOR_OPPONENT':
+          setGamePhase('waiting');
+          setGameMessage('Waiting for an opponent to join...');
+          // Aquí podrías mostrar un mensaje de "Esperando..." en la UI
+          break;
+
+        case 'CHOOSE_MONSTER':
+          setGamePhase('choosing');
+          setMonsterChoices(message.choices);
+          setGameMessage('Choose your monster!');
+          break;
+
+        case 'GAME_START': // This can now be merged into GAME_STATE_UPDATE
+          setGamePhase('fighting');
+          setGameMessage('The battle begins!');
+          break;
+
+        default:
+          console.warn('Unknown message type:', message.type);
+          break;
+
+        // ... otros casos como 'OPPONENT_DISCONNECTED'
+      }
+    };
 
     return () => {
       newSocket.close();
@@ -81,24 +122,78 @@ function App() {
           Send Test Message
         </button>
       </div>
-      <main className="bg-slate-800 text-white min-h-screen flex flex-col">
-        {/* Zona del Oponente */}
-        <div className='h-1/2 flex flex-col items-center justify-center'>
-          <MonsterCard monster={opponentMonster} />
+      {gamePhase === 'connecting' && (
+        <div className="text-center mt-10">
+          <h2 className="text-2xl">Connecting to server...</h2>
         </div>
+      )}
 
-        {/* Zona del Jugador */}
-        <div className='h-1/2 flex flex-col items-center justify-center'>
-          <MonsterCard monster={playerMonster} />
-          <div className="mt-4">
-            {playerMonster.actions.map((action, index) => (
-              <button key={index} onClick={() => handlePlayerAction(action)} className={`bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded m-2 ${!playerTurn ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={!playerTurn}>
-                {action.name} ({action.damage} DMG)
-              </button>
-            ))}
-          </div>
+      {gamePhase === 'waiting' && (
+        <div className="text-center mt-10">
+          <h2 className="text-2xl">{gameMessage}</h2>
         </div>
-      </main>
+      )}
+
+      {gamePhase === 'choosing' && (
+        <div className="text-center mt-10">
+          <h2 className="text-2xl mb-4">{gameMessage}</h2>
+          <div className="flex flex-col md:flex-row justify-center items-center p-2">
+            {monsterChoices.map((monster, index) => (
+              <div key={index} className="flex flex-col justify-center items-center border p-4 rounded w-1/2 md:w-1/4 m-2">
+                <h3 className="text-xl font-bold">{monster.name}</h3>
+                <img src={monster.imageUrl} alt={monster.name} className="h-64 object-contain mb-2 rounded-md shadow-2xl" />
+                <p>HP: {monster.hp}</p>
+                <button
+                  className="mt-2 bg-blue-500 px-4 py-2 rounded"
+                  onClick={() => {
+                    setPlayerMonster(monster);
+                    setGamePhase('fighting');
+                    setGameMessage('The battle begins!');
+                  }}
+                >
+                  Choose
+                </button>
+              </div>
+            ))}
+          </div >
+        </div >
+      )
+      }
+
+      {
+        gamePhase === 'fighting' && (
+          <div className="text-center mt-10">
+            <h2 className="text-2xl mb-4">{gameMessage}</h2>
+            <div className="flex justify-around">
+              <MonsterCard monster={playerMonster} />
+              <MonsterCard monster={opponentMonster} />
+            </div>
+
+            {playerTurn ? (
+              <div className="mt-6">
+                <h3 className="text-xl mb-2">Your Actions:</h3>
+                <div className="flex justify-center space-x-4">
+                  {playerMonster.actions.map((action, index) => (
+                    <button
+                      key={index}
+                      className="bg-blue-500 px-4 py-2 rounded"
+                      onClick={() => handlePlayerAction(action)}
+                    >
+                      {action.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6">
+                <h3 className="text-xl mb-2">Opponent's Turn:</h3>
+                <p>Waiting for opponent to act...</p>
+              </div>
+            )}
+          </div>
+        )
+      }
+
     </>
   )
 }
