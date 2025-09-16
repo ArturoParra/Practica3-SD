@@ -51,10 +51,10 @@ public class DndApiService {
 
         MonsterDetails details = gson.fromJson(response.body(), MonsterDetails.class);
 
-        // Construir la URL completa de la imagen 🖼️
+        // Construir la URL completa de la imagen
         String imageUrl = "https://www.dnd5eapi.co" + details.image;
 
-        // Filtrar solo las acciones que tienen información de daño ⚔️
+        // Filtrar solo las acciones que tienen información de daño
         List<Action> validActions = Arrays.stream(details.actions)
                 .filter(action -> action.damage != null && action.damage.length > 0)
                 .collect(Collectors.toList());

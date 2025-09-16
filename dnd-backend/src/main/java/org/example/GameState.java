@@ -9,11 +9,15 @@ public class GameState {
     public Monster opponentMonster;
     public boolean isYourTurn;
     public boolean isGameOver;
+    public int damageDealt;
+    public String attacker;
     public String winner;
 
-    public GameState(Monster yourMonster, Monster opponentMonster, boolean isYourTurn, boolean isGameOver, String winner) {
+    public GameState(Monster yourMonster, Monster opponentMonster, int damageDealt, String attacker, boolean isYourTurn, boolean isGameOver, String winner) {
         this.yourMonster = yourMonster;
         this.opponentMonster = opponentMonster;
+        this.damageDealt = damageDealt;
+        this.attacker = attacker;
         this.isYourTurn = isYourTurn;
         this.isGameOver = isGameOver;
         this.winner = winner;

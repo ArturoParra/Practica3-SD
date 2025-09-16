@@ -5,7 +5,16 @@ import org.java_websocket.WebSocket;
 
 import java.util.Random;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import java.util.Timer;
+import java.util.TimerTask;
+
 public class GameRoom {
+
+    private Main server;
+
     private WebSocket player1;
     private WebSocket player2;
     private WebSocket currentTurn;
@@ -17,6 +26,10 @@ public class GameRoom {
     // The monsters chosen by the players for the battle
     private Monster player1Monster = null;
     private Monster player2Monster = null;
+
+    // Temporary storage for selected monsters before the battle starts
+    private Monster player1SelectedMonster = null;
+    private Monster player2SelectedMonster = null;
 
     private static final Gson gson = new Gson();
 
@@ -32,7 +45,8 @@ public class GameRoom {
         }
     }
 
-    public GameRoom(WebSocket player1, WebSocket player2, DndApiService dndApiService,DndApiService.ApiResource[] gameMonsters) {
+    public GameRoom(WebSocket player1, WebSocket player2, DndApiService dndApiService,DndApiService.ApiResource[] gameMonsters, Main server) {
+        this.server = server;
         this.player1 = player1;
         this.player2 = player2;
         this.currentTurn = player1; // Player 1 always starts first
@@ -72,19 +86,18 @@ public class GameRoom {
         return player2;
     }
 
-    private void broadcastState(boolean isGameOver, String winner) {
+    private void broadcastState(boolean isGameOver, String winner, int damageDealt, String attackerName) {
         // Crear y enviar estado para el jugador 1
-        GameState stateForP1 = new GameState(player1Monster, player2Monster, (currentTurn == player1), isGameOver, winner);
+        GameState stateForP1 = new GameState(player1Monster, player2Monster, damageDealt, attackerName, (currentTurn == player1), isGameOver, winner);
         player1.send(stateForP1.toJson(gson));
 
         // Crear y enviar estado para el jugador 2
-        GameState stateForP2 = new GameState(player2Monster, player1Monster, (currentTurn == player2), isGameOver, winner);
+        GameState stateForP2 = new GameState(player2Monster, player1Monster, damageDealt, attackerName, (currentTurn == player2), isGameOver, winner);
         player2.send(stateForP2.toJson(gson));
     }
 
-    public synchronized void handlePlayerAction(WebSocket player, ActionPayload action) {
+    public synchronized void handlePlayerAction(WebSocket player, ActionPayload clientAction) {
         if(player != currentTurn) {
-            player.send("{\"type\":\"ERROR\",\"message\":\"Not your turn!\"}");
             return;
         }
 
@@ -92,9 +105,26 @@ public class GameRoom {
         Monster attacker = (player == player1) ? player1Monster : player2Monster;
         Monster defender = (player == player1) ? player2Monster : player1Monster;
 
-        //Apply damage
-        int newHP = Math.max(defender.hp - action.getDamage(), 0);
-        defender.hp = newHP;
+        // 1. Busca la acción completa del monstruo en el servidor
+        Action chosenAction = null;
+        for (Action action : attacker.actions) {
+            if (action.name.equals(clientAction.getName())) {
+                chosenAction = action;
+                break;
+            }
+        }
+
+        int damageDealt = 0;
+        if (chosenAction != null && chosenAction.damage != null && chosenAction.damage.length > 0) {
+            // 2. Calcula el daño usando la fórmula del dado del servidor
+            String diceFormula = chosenAction.damage[0].damage_dice;
+            System.out.println("DEBUG: About to calculate damage. Formula is: '" + diceFormula + "'");
+            damageDealt = calculateDiceDamage(diceFormula);
+        }
+
+        // 3. Aplica el daño
+        int newHp = Math.max(0, defender.hp - damageDealt);
+        defender.hp = newHp;
 
         //Check winning condition
         boolean isGameOver = (defender.hp <= 0);
@@ -103,44 +133,98 @@ public class GameRoom {
 
         if(!isGameOver) {
             this.currentTurn = (player == player1) ? player2 : player1;
+        }else{
+            scheduleEndGame();
         }
 
         this.currentTurn = (player == player1) ? player2 : player1;
 
 
-        this.broadcastState(isGameOver, winner);
+        this.broadcastState(isGameOver, winner, damageDealt, attacker.name);
 
     }
 
     public void handleMonsterSelection(WebSocket conn, String monsterName) {
+        Monster chosenMonster = null;
+
+        // First, identify which player is making the selection (conn)
         if (conn == player1) {
-            // Find the chosen monster in team1
+            // Find the chosen monster from their specific team
             for (Monster m : team1) {
                 if (m.name.equals(monsterName)) {
-                    this.player1Monster = m;
-                    System.out.println("Player 1 selected: " + m.name);
+                    chosenMonster = m;
                     break;
                 }
             }
-        } else { // It's player 2
+            // Store the choice in the correct variable
+            if (chosenMonster != null) {
+                this.player1SelectedMonster = chosenMonster;
+                System.out.println("Player 1 selected: " + chosenMonster.name);
+            }
+        } else { // It must be player 2
             for (Monster m : team2) {
                 if (m.name.equals(monsterName)) {
-                    this.player2Monster = m;
-                    System.out.println("Player 2 selected: " + m.name);
+                    chosenMonster = m;
                     break;
                 }
             }
+            if (chosenMonster != null) {
+                this.player2SelectedMonster = chosenMonster;
+                System.out.println("Player 2 selected: " + chosenMonster.name);
+            }
         }
 
-        // Synchronization Check: Start the game only when BOTH players have chosen ✅
-        if (player1Monster != null && player2Monster != null) {
+        // --- THIS IS THE CRITICAL SYNCHRONIZATION CHECK ---
+        // Start the game only when BOTH players have a selected monster.
+        if (player1SelectedMonster != null && player2SelectedMonster != null) {
             System.out.println("Both players have selected. Starting the battle!");
-            this.player1Monster = player1Monster; // Assign the chosen monster to the battle state
-            this.player2Monster = player2Monster;
 
-            // Use the broadcast method we created earlier to send the first GameState
-            broadcastState(false, null);
+            // Assign the chosen monsters to the active battle state
+            this.player1Monster = player1SelectedMonster;
+            this.player2Monster = player2SelectedMonster;
+
+            // Send the initial game state update to both players
+            broadcastState(false, null, 0, null);
         }
+    }
+
+    private int calculateDiceDamage(String diceFormula) {
+        // Patrón para encontrar fórmulas como "2d6+3", "1d8", "1d12-1", etc.
+        Pattern pattern = Pattern.compile("(\\d+)d(\\d+)([+-]\\d+)?");
+        Matcher matcher = pattern.matcher(diceFormula);
+
+        if (matcher.find()) {
+            int numberOfDice = Integer.parseInt(matcher.group(1));
+            int diceSides = Integer.parseInt(matcher.group(2));
+            int modifier = 0;
+
+            // Revisa si hay un modificador (+3, -1, etc.)
+            if (matcher.group(3) != null) {
+                modifier = Integer.parseInt(matcher.group(3));
+            }
+
+            int totalDamage = 0;
+            for (int i = 0; i < numberOfDice; i++) {
+                // Lanza un dado (número aleatorio entre 1 y el número de caras)
+                totalDamage += random.nextInt(diceSides) + 1;
+            }
+
+            System.out.println("Rolled " + diceFormula + " -> Damage: " + (totalDamage + modifier));
+            return totalDamage + modifier;
+        }
+
+        // Si la fórmula no coincide, devuelve 0 o un valor por defecto
+        return 0;
+    }
+
+    private void scheduleEndGame() {
+        new Timer().schedule(new TimerTask() {
+            @Override
+            public void run() {
+                System.out.println("Timer finished. Ending game for room.");
+                server.endGameAndRequeue(GameRoom.this);
+            }
+        }, 5000); // 5000 milisegundos = 5 segundos
     }
 
 }

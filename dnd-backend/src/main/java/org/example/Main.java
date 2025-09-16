@@ -50,7 +50,7 @@ public class Main extends WebSocketServer {
 
 
             // Create a new game room for the two players
-            GameRoom room = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList);
+            GameRoom room = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this);
             playerRooms.put(this.waitingPlayer, room);
             playerRooms.put(conn, room);
 
@@ -81,20 +81,22 @@ public class Main extends WebSocketServer {
             return;
         }
         try {
-            GameMessage gameMessage = gson.fromJson(message, GameMessage.class);
             JsonObject jsonMessage = gson.fromJson(message, JsonObject.class);
-
             // Handle different message types
             String messageType = jsonMessage.get("type").getAsString();
 
             switch (messageType){
                 case "PLAYER_ACTION": {
-                    room.handlePlayerAction(conn, gameMessage.getPayload());
+                    System.out.println("Received player action message: " + message);
+                    ActionPayload action = gson.fromJson(jsonMessage.get("payload"), ActionPayload.class);
+                    room.handlePlayerAction(conn, action);
                     break;
                 }
                 case"SELECT_MONSTER" :{
                     // The payload in this case is just the monster's name (a string)
+                    System.out.println("Received monster selection message: " + message);
                     String selectedMonsterName = gson.fromJson(jsonMessage.get("payload"), String.class);
+                    System.out.println("Player selected monster: " + selectedMonsterName);
                     room.handleMonsterSelection(conn, selectedMonsterName);
                     break;
                 }
@@ -117,6 +119,39 @@ public class Main extends WebSocketServer {
     @Override
     public void onStart() {
         System.out.println("Server started successfully");
+    }
+
+    // Este método es llamado por la sala de juego después del temporizador
+    public synchronized void endGameAndRequeue(GameRoom room) {
+        System.out.println("Re-queuing players.");
+
+        // Obtener a los jugadores antes de disolver la sala
+        WebSocket p1 = room.getPlayer1();
+        WebSocket p2 = room.getPlayer2();
+
+        // Disolver la sala
+        playerRooms.remove(p1);
+        playerRooms.remove(p2);
+
+        // Volver a poner a cada jugador en la cola
+        requeuePlayer(p1);
+        requeuePlayer(p2);
+    }
+
+    // Este método contiene la lógica de matchmaking que ya teníamos en onOpen
+    private void requeuePlayer(WebSocket conn) {
+        if (waitingPlayer == null) {
+            this.waitingPlayer = conn;
+            conn.send("{\"type\": \"WAITING_FOR_OPPONENT\"}");
+            System.out.println("Player " + conn.getRemoteSocketAddress() + " is now waiting.");
+        } else {
+            System.out.println("Player " + conn.getRemoteSocketAddress() + " matched with waiting player. Starting new game.");
+            GameRoom newRoom = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this);
+            playerRooms.put(this.waitingPlayer, newRoom);
+            playerRooms.put(conn, newRoom);
+            this.waitingPlayer = null;
+            // No necesitamos enviar GAME_START aquí, el constructor de GameRoom ya envía CHOOSE_MONSTER
+        }
     }
 
     // We still need our main method to start the server

@@ -9,23 +9,11 @@ function App() {
   const [monsterChoices, setMonsterChoices] = useState([]);
   const [gameMessage, setGameMessage] = useState('');
 
-  const [playerMonster, setPlayerMonster] = useState({
-    name: 'Goblin',
-    hp: 10,
-    maxHp: 10,
-    actions: [
-      { name: 'Scratch', damage: 2 },
-      { name: 'Bite', damage: 3 }
-    ]
-  })
+  const [playerMonster, setPlayerMonster] = useState(null)
 
-  const [opponentMonster, setOpponentMonster] = useState({
-    name: 'Orc',
-    hp: 12,
-    maxHp: 12
-  })
+  const [opponentMonster, setOpponentMonster] = useState(null)
 
-  const [playerTurn, setPlayerTurn] = useState(true);
+  const [playerTurn, setPlayerTurn] = useState();
 
   useEffect(() => {
     const newSocket = new WebSocket('ws://localhost:8080');
@@ -57,7 +45,6 @@ function App() {
         case 'WAITING_FOR_OPPONENT':
           setGamePhase('waiting');
           setGameMessage('Waiting for an opponent to join...');
-          // Aquí podrías mostrar un mensaje de "Esperando..." en la UI
           break;
 
         case 'CHOOSE_MONSTER':
@@ -85,43 +72,30 @@ function App() {
 
   }, [])
 
-
-  useEffect(() => {
-    if (!playerTurn) {
-      const timer = setTimeout(() => {
-        const action = { name: 'Smash', damage: 2 };
-        const newHp = Math.max(playerMonster.hp - action.damage, 0);
-        setPlayerMonster({ ...playerMonster, hp: newHp });
-        setPlayerTurn(true);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [playerTurn])
-
   const handlePlayerAction = (action) => {
     if (socket && playerTurn) {
       const message = {
         type: 'PLAYER_ACTION',
-        payload: action
+        payload: { name: action.name }
       }
       const jsonmessage = JSON.stringify(message);
       socket.send(jsonmessage);
     }
   }
 
-  const handleSendMessage = () => {
+  const handleSelectMonster = (monsterName) => {
     if (socket) {
-      socket.send('Hello from client!');
+      const message = {
+        type: 'SELECT_MONSTER',
+        payload: monsterName // El payload ahora es correctamente un string
+      };
+      socket.send(JSON.stringify(message));
+      setGameMessage('Waiting for opponent to choose...');
     }
-  }
+  };
 
   return (
     <>
-      <div className="p-4">
-        <button onClick={handleSendMessage} className="bg-green-500 px-4 py-2 rounded">
-          Send Test Message
-        </button>
-      </div>
       {gamePhase === 'connecting' && (
         <div className="text-center mt-10">
           <h2 className="text-2xl">Connecting to server...</h2>
@@ -148,7 +122,8 @@ function App() {
                   onClick={() => {
                     setPlayerMonster(monster);
                     setGamePhase('fighting');
-                    setGameMessage('The battle begins!');
+                    setGameMessage('You chose ' + monster.name + '! Waiting for opponent...');
+                    handleSelectMonster(monster.name);
                   }}
                 >
                   Choose
@@ -160,13 +135,26 @@ function App() {
       )
       }
 
+      {gamePhase === 'fighting' && !opponentMonster && (
+        <div className="text-center mt-10">
+          <h2 className="text-2xl">{gameMessage}</h2>
+        </div>
+      )}
+
       {
-        gamePhase === 'fighting' && (
+        gamePhase === 'fighting' && opponentMonster && (
           <div className="text-center mt-10">
-            <h2 className="text-2xl mb-4">{gameMessage}</h2>
             <div className="flex justify-around">
-              <MonsterCard monster={playerMonster} />
-              <MonsterCard monster={opponentMonster} />
+              <div className="flex w-full items-center flex-col text-center">
+                <div>YOU</div>
+                <MonsterCard monster={playerMonster} />
+              </div>
+
+              <div className="flex w-full items-center flex-col text-center">
+                <div>ENEMY</div>
+                <MonsterCard monster={opponentMonster} />
+              </div>
+
             </div>
 
             {playerTurn ? (
