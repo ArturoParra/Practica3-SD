@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class DndApiService {
@@ -40,7 +41,7 @@ public class DndApiService {
     }
 
     // Método para obtener los detalles de UN monstruo
-    public Monster fetchMonsterDetails(String monsterIndex) throws Exception {
+    private Monster fetchMonsterfromAPI(String monsterIndex) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://www.dnd5eapi.co/api/monsters/" + monsterIndex))
                 .build();
@@ -61,6 +62,23 @@ public class DndApiService {
 
         // Crear y devolver nuestro objeto Monster con toda la información
         return new Monster(details.name, details.hit_points, details.hit_points, imageUrl, validActions);
+    }
+
+    public Monster getMonsterDetails(String monsterIndex, Map<String, Monster> cache) throws Exception {
+        // 1. Check if the monster is already in the cache
+        if (cache.containsKey(monsterIndex)) {
+            System.out.println("CACHE HIT: Found '" + monsterIndex + "' in cache.");
+            return cache.get(monsterIndex);
+        }
+
+        // 2. If not, fetch from the API
+        System.out.println("CACHE MISS: Fetching '" + monsterIndex + "' from API.");
+        Monster monster = fetchMonsterfromAPI(monsterIndex);
+
+        // 3. Store the result in the cache for next time
+        cache.put(monsterIndex, monster);
+
+        return monster;
     }
 
     // Clase interna para mapear solo los detalles que necesitamos del JSON del monstruo

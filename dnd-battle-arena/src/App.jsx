@@ -39,6 +39,8 @@ function App() {
           // Manejar el fin del juego
           if (message.isGameOver) {
             alert(`Game Over! Winner: ${message.winner}`);
+            setGamePhase('connecting');
+            setGameMessage('Connecting to server...');
           }
           break;
 
@@ -48,6 +50,9 @@ function App() {
           break;
 
         case 'CHOOSE_MONSTER':
+          setPlayerMonster(null);
+          setOpponentMonster(null);
+          setPlayerTurn(false);
           setGamePhase('choosing');
           setMonsterChoices(message.choices);
           setGameMessage('Choose your monster!');

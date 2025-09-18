@@ -3,6 +3,7 @@ package org.example;
 import com.google.gson.Gson;
 import org.java_websocket.WebSocket;
 
+import java.util.Map;
 import java.util.Random;
 
 import java.util.regex.Matcher;
@@ -45,7 +46,7 @@ public class GameRoom {
         }
     }
 
-    public GameRoom(WebSocket player1, WebSocket player2, DndApiService dndApiService,DndApiService.ApiResource[] gameMonsters, Main server) {
+    public GameRoom(WebSocket player1, WebSocket player2, DndApiService dndApiService,DndApiService.ApiResource[] gameMonsters, Main server, Map<String, Monster> monsterCache) {
         this.server = server;
         this.player1 = player1;
         this.player2 = player2;
@@ -54,9 +55,8 @@ public class GameRoom {
         try{
             Monster[] RoomMonsters = new Monster[6];
             for(int i = 0; i < 6; i++){
-                DndApiService.ApiResource randomMonster = gameMonsters[random.nextInt(gameMonsters.length)];
 
-                RoomMonsters[i] = dndApiService.fetchMonsterDetails(randomMonster.index);
+                RoomMonsters[i] = findValidMonster(dndApiService, gameMonsters, monsterCache);
 
             }
 
@@ -215,6 +215,26 @@ public class GameRoom {
 
         // Si la fórmula no coincide, devuelve 0 o un valor por defecto
         return 0;
+    }
+
+    private Monster findValidMonster(DndApiService apiService, DndApiService.ApiResource[] monsterList, Map<String, Monster> monsterCache) throws Exception {
+        // Loop indefinitely until we find a valid monster
+        while (true) {
+            // 1. Pick a random monster from the master list
+            DndApiService.ApiResource randomMonsterInfo = monsterList[random.nextInt(monsterList.length)];
+
+            // 2. Fetch its details. The getMonsterDetails method already filters the actions.
+            Monster candidateMonster = apiService.getMonsterDetails(randomMonsterInfo.index, monsterCache);
+
+            // 3. Check if the monster is valid (has at least one action after filtering)
+            if (candidateMonster != null && candidateMonster.actions != null && !candidateMonster.actions.isEmpty()) {
+                System.out.println("Found valid monster for battle: " + candidateMonster.name);
+                return candidateMonster; // The monster is good, return it.
+            }
+
+            // If the monster wasn't valid, the loop will simply run again.
+            System.out.println("... " + randomMonsterInfo.name + " has no valid damaging actions, trying again.");
+        }
     }
 
     private void scheduleEndGame() {

@@ -25,7 +25,9 @@ public class Main extends WebSocketServer {
     private final DndApiService dndApiService = new DndApiService();
     private DndApiService.ApiResource[] monsterList;
 
-    // You need a constructor to set up the server's address and port
+    private final Map<String, Monster> monsterCache = new ConcurrentHashMap<>();
+
+    // Constructor de la clase Main
     public Main(int port) {
         super(new InetSocketAddress(port));
         try{
@@ -46,11 +48,9 @@ public class Main extends WebSocketServer {
             System.out.println("Player connected and waiting: " + conn.getRemoteSocketAddress());
         }else{
             System.out.println("Player connected: " + conn.getRemoteSocketAddress());
-            //TODO: Recieve monsters form API and store them in a list for random selection of 6 monsters to send to each GameRoom instance when created
-
 
             // Create a new game room for the two players
-            GameRoom room = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this);
+            GameRoom room = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this, monsterCache);
             playerRooms.put(this.waitingPlayer, room);
             playerRooms.put(conn, room);
 
@@ -146,7 +146,7 @@ public class Main extends WebSocketServer {
             System.out.println("Player " + conn.getRemoteSocketAddress() + " is now waiting.");
         } else {
             System.out.println("Player " + conn.getRemoteSocketAddress() + " matched with waiting player. Starting new game.");
-            GameRoom newRoom = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this);
+            GameRoom newRoom = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this, monsterCache);
             playerRooms.put(this.waitingPlayer, newRoom);
             playerRooms.put(conn, newRoom);
             this.waitingPlayer = null;
