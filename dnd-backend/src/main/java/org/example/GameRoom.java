@@ -1,5 +1,6 @@
 package org.example;
 
+import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 import org.java_websocket.WebSocket;
 
@@ -11,8 +12,28 @@ import java.util.regex.Pattern;
 
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
-public class GameRoom {
+public class GameRoom implements Runnable {
+
+    // Clase interna para pasar mensajes junto con la conexión del jugador
+    public static class PlayerMessage {
+        public final WebSocket connection;
+        public final String message;
+
+        public PlayerMessage(WebSocket connection, String message) {
+            this.connection = connection;
+            this.message = message;
+        }
+    }
+
+    private final BlockingQueue<PlayerMessage> messageQueue = new LinkedBlockingQueue<>();
+    private volatile boolean isRunning = true;
+
+    private final DndApiService dndApiService;
+    private final DndApiService.ApiResource[] gameMonsters;
+    private final Map<String, Monster> monsterCache;
 
     private Main server;
 
@@ -46,36 +67,14 @@ public class GameRoom {
         }
     }
 
-    public GameRoom(WebSocket player1, WebSocket player2, DndApiService dndApiService,DndApiService.ApiResource[] gameMonsters, Main server, Map<String, Monster> monsterCache) {
+    public GameRoom(WebSocket player1, WebSocket player2, DndApiService dndApiService, DndApiService.ApiResource[] gameMonsters, Main server, Map<String, Monster> monsterCache) {
         this.server = server;
         this.player1 = player1;
         this.player2 = player2;
         this.currentTurn = player1; // Player 1 always starts first
-
-        try{
-            Monster[] RoomMonsters = new Monster[6];
-            for(int i = 0; i < 6; i++){
-
-                RoomMonsters[i] = findValidMonster(dndApiService, gameMonsters, monsterCache);
-
-            }
-
-            // Assign first 3 to player 1 and next 3 to player 2
-            System.arraycopy(RoomMonsters, 0, team1, 0, 3);
-            System.arraycopy(RoomMonsters, 3, team2, 0, 3);
-
-            // Send the teams to the players
-            String team1Json = gson.toJson(new ChooseMonsterMessage(this.team1));
-            player1.send(team1Json);
-
-            String team2Json = gson.toJson(new ChooseMonsterMessage(this.team2));
-            player2.send(team2Json);
-
-        }catch(Exception e){
-            System.err.println("Failed to fetch monster details for the game room!");
-            e.printStackTrace();
-        }
-
+        this.dndApiService = dndApiService;
+        this.gameMonsters = gameMonsters;
+        this.monsterCache = monsterCache;
     }
 
     public WebSocket getPlayer1() {
@@ -188,6 +187,72 @@ public class GameRoom {
         }
     }
 
+    public void enqueueMessage(PlayerMessage message) {
+        messageQueue.add(message);
+    }
+
+    @Override
+    public void run() {
+        // Configuración del juego
+        try {
+            Monster[] roomMonsters = new Monster[6];
+            for (int i = 0; i < 6; i++) {
+                roomMonsters[i] = findValidMonster(dndApiService, gameMonsters, monsterCache);
+            }
+
+            System.arraycopy(roomMonsters, 0, team1, 0, 3);
+            System.arraycopy(roomMonsters, 3, team2, 0, 3);
+
+            player1.send(gson.toJson(new ChooseMonsterMessage(this.team1)));
+            player2.send(gson.toJson(new ChooseMonsterMessage(this.team2)));
+
+        } catch (Exception e) {
+            System.err.println("Failed to fetch monster details for the game room!");
+            e.printStackTrace();
+            // Considerar terminar el hilo o notificar a los jugadores del error
+            return;
+        }
+
+        // Bucle principal del juego
+        while (isRunning) {
+            try {
+                PlayerMessage playerMessage = messageQueue.take(); // Bloquea hasta que haya un mensaje disponible
+                WebSocket conn = playerMessage.connection;
+                String message = playerMessage.message;
+
+                JsonObject jsonMessage = gson.fromJson(message, JsonObject.class);
+                String messageType = jsonMessage.get("type").getAsString();
+
+                if (conn == null) continue;
+
+                switch (messageType) {
+                    case "PLAYER_ACTION": {
+                        ActionPayload action = gson.fromJson(jsonMessage.get("payload"), ActionPayload.class);
+                        handlePlayerAction(conn, action);
+                        break;
+                    }
+                    case "SELECT_MONSTER": {
+                        String selectedMonsterName = gson.fromJson(jsonMessage.get("payload"), String.class);
+                        handleMonsterSelection(conn, selectedMonsterName);
+                        break;
+                    }
+                    default:
+                        System.out.println("Unknown message type in game room: " + messageType);
+                        break;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                isRunning = false;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    // Este método auxiliar ya no es necesario, ya que la conexión se pasa directamente.
+    // private WebSocket getPlayerFromMessage(JsonObject message) { ... }
+
+
     private int calculateDiceDamage(String diceFormula) {
         // Patrón para encontrar fórmulas como "2d6+3", "1d8", "1d12-1", etc.
         Pattern pattern = Pattern.compile("(\\d+)d(\\d+)([+-]\\d+)?");
@@ -237,12 +302,26 @@ public class GameRoom {
         }
     }
 
+    private Thread gameThread;
+
+    public void setGameThread(Thread thread) {
+        this.gameThread = thread;
+    }
+
+    public void stop() {
+        isRunning = false;
+        if (gameThread != null) {
+            gameThread.interrupt();
+        }
+    }
+
     private void scheduleEndGame() {
         new Timer().schedule(new TimerTask() {
             @Override
             public void run() {
                 System.out.println("Timer finished. Ending game for room.");
                 server.endGameAndRequeue(GameRoom.this);
+                stop(); // Detiene el hilo de la sala de juego
             }
         }, 5000); // 5000 milisegundos = 5 segundos
     }

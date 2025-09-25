@@ -1,22 +1,14 @@
 package org.example;
 
-import com.google.gson.JsonObject;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 import java.net.InetSocketAddress;
 
-import com.google.gson.Gson;
-
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Main extends WebSocketServer {
-
-    private static final Gson gson = new Gson();
 
     private Map<WebSocket, GameRoom> playerRooms = new ConcurrentHashMap<>();
 
@@ -49,10 +41,14 @@ public class Main extends WebSocketServer {
         }else{
             System.out.println("Player connected: " + conn.getRemoteSocketAddress());
 
-            // Create a new game room for the two players
             GameRoom room = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this, monsterCache);
             playerRooms.put(this.waitingPlayer, room);
             playerRooms.put(conn, room);
+
+            // Start the game room in a new thread
+            Thread gameThread = new Thread(room);
+            room.setGameThread(gameThread); // Pass the thread to the room
+            gameThread.start();
 
             this.waitingPlayer = null;
 
@@ -77,37 +73,8 @@ public class Main extends WebSocketServer {
     @Override
     public void onMessage(WebSocket conn, String message) {
         GameRoom room = playerRooms.get(conn);
-        if(room == null){
-            return;
-        }
-        try {
-            JsonObject jsonMessage = gson.fromJson(message, JsonObject.class);
-            // Handle different message types
-            String messageType = jsonMessage.get("type").getAsString();
-
-            switch (messageType){
-                case "PLAYER_ACTION": {
-                    System.out.println("Received player action message: " + message);
-                    ActionPayload action = gson.fromJson(jsonMessage.get("payload"), ActionPayload.class);
-                    room.handlePlayerAction(conn, action);
-                    break;
-                }
-                case"SELECT_MONSTER" :{
-                    // The payload in this case is just the monster's name (a string)
-                    System.out.println("Received monster selection message: " + message);
-                    String selectedMonsterName = gson.fromJson(jsonMessage.get("payload"), String.class);
-                    System.out.println("Player selected monster: " + selectedMonsterName);
-                    room.handleMonsterSelection(conn, selectedMonsterName);
-                    break;
-                }
-                default:
-                    System.out.println("Unknown message type: " + messageType);
-                    break;
-            }
-
-
-        } catch (Exception e) {
-            e.printStackTrace();
+        if (room != null) {
+            room.enqueueMessage(new GameRoom.PlayerMessage(conn, message));
         }
     }
 
@@ -149,8 +116,10 @@ public class Main extends WebSocketServer {
             GameRoom newRoom = new GameRoom(this.waitingPlayer, conn, dndApiService, monsterList, this, monsterCache);
             playerRooms.put(this.waitingPlayer, newRoom);
             playerRooms.put(conn, newRoom);
+            Thread gameThread = new Thread(newRoom);
+            newRoom.setGameThread(gameThread);
+            gameThread.start();
             this.waitingPlayer = null;
-            // No necesitamos enviar GAME_START aquí, el constructor de GameRoom ya envía CHOOSE_MONSTER
         }
     }
 

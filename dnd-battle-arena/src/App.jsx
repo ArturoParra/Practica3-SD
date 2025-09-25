@@ -100,30 +100,32 @@ function App() {
   };
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col items-center p-4">
+      <h1 className="text-6xl title-font text-amber-400 mb-8">D&D Battle Arena</h1>
+
       {gamePhase === 'connecting' && (
         <div className="text-center mt-10">
-          <h2 className="text-2xl">Connecting to server...</h2>
+          <h2 className="message-box">Connecting to the tavern...</h2>
         </div>
       )}
 
       {gamePhase === 'waiting' && (
         <div className="text-center mt-10">
-          <h2 className="text-2xl">{gameMessage}</h2>
+          <h2 className="message-box">{gameMessage}</h2>
         </div>
       )}
 
       {gamePhase === 'choosing' && (
         <div className="text-center mt-10">
-          <h2 className="text-2xl mb-4">{gameMessage}</h2>
-          <div className="flex flex-col md:flex-row justify-center items-center p-2">
+          <h2 className="message-box">{gameMessage}</h2>
+          <div className="flex flex-col md:flex-row justify-center items-stretch gap-8 p-4">
             {monsterChoices.map((monster, index) => (
-              <div key={index} className="flex flex-col justify-center items-center border p-4 rounded w-1/2 md:w-1/4 m-2">
-                <h3 className="text-xl font-bold">{monster.name}</h3>
-                <img src={monster.imageUrl} alt={monster.name} className="h-64 object-contain mb-2 rounded-md shadow-2xl" />
-                <p>HP: {monster.hp}</p>
+              <div key={index} className="card flex flex-col justify-between items-center w-full md:w-1/4">
+                <h3 className="text-2xl font-bold title-font text-red-500">{monster.name}</h3>
+                <img src={monster.imageUrl} alt={monster.name} className="h-64 object-contain my-4 rounded-md" />
+                <p className="text-lg">HP: {monster.hp}</p>
                 <button
-                  className="mt-2 bg-blue-500 px-4 py-2 rounded"
+                  className="btn-primary mt-4"
                   onClick={() => {
                     setPlayerMonster(monster);
                     setGamePhase('fighting');
@@ -135,60 +137,55 @@ function App() {
                 </button>
               </div>
             ))}
-          </div >
-        </div >
-      )
-      }
-
-      {gamePhase === 'fighting' && !opponentMonster && (
-        <div className="text-center mt-10">
-          <h2 className="text-2xl">{gameMessage}</h2>
+          </div>
         </div>
       )}
 
-      {
-        gamePhase === 'fighting' && opponentMonster && (
-          <div className="text-center mt-10">
-            <div className="flex justify-around">
-              <div className="flex w-full items-center flex-col text-center">
-                <div>YOU</div>
-                <MonsterCard monster={playerMonster} />
-              </div>
+      {gamePhase === 'fighting' && !opponentMonster && (
+        <div className="text-center mt-10">
+          <h2 className="message-box">{gameMessage}</h2>
+        </div>
+      )}
 
-              <div className="flex w-full items-center flex-col text-center">
-                <div>ENEMY</div>
-                <MonsterCard monster={opponentMonster} />
-              </div>
-
+      {gamePhase === 'fighting' && opponentMonster && (
+        <div className="w-full">
+          <div className="flex justify-around items-start">
+            <div className="flex w-1/2 items-center flex-col text-center p-4">
+              <h2 className="text-4xl title-font text-green-400 mb-4">YOU</h2>
+              <MonsterCard monster={playerMonster} />
             </div>
 
-            {playerTurn ? (
-              <div className="mt-6">
-                <h3 className="text-xl mb-2">Your Actions:</h3>
-                <div className="flex justify-center space-x-4">
-                  {playerMonster.actions.map((action, index) => (
-                    <button
-                      key={index}
-                      className="bg-blue-500 px-4 py-2 rounded"
-                      onClick={() => handlePlayerAction(action)}
-                    >
-                      {action.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6">
-                <h3 className="text-xl mb-2">Opponent's Turn:</h3>
-                <p>Waiting for opponent to act...</p>
-              </div>
-            )}
+            <div className="flex w-1/2 items-center flex-col text-center p-4">
+              <h2 className="text-4xl title-font text-red-500 mb-4">ENEMY</h2>
+              <MonsterCard monster={opponentMonster} />
+            </div>
           </div>
-        )
-      }
 
-    </>
-  )
+          {playerTurn ? (
+            <div className="mt-6 text-center">
+              <h3 className="message-box">Your Turn! Choose an Action:</h3>
+              <div className="flex justify-center space-x-4">
+                {playerMonster.actions.map((action, index) => (
+                  <button
+                    key={index}
+                    className="btn-primary"
+                    onClick={() => handlePlayerAction(action)}
+                  >
+                    {action.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 text-center">
+              <h3 className="message-box">Opponent's Turn</h3>
+              <p className="text-xl">Waiting for the enemy to act...</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default App
